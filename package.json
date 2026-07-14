@@ -7,6 +7,8 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "migrate": "bun run src/db/migrate.ts",
+    "db:reset": "bun run src/db/reset.ts",
+    "db:seed": "bun run src/db/seed.ts",
     "test": "bun test"
   },
   "dependencies": {

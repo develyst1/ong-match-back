@@ -3,6 +3,23 @@ import { z } from "zod";
 import { userMiddleware } from "../middleware/user";
 import { createPost, getFeed, follow, unfollow } from "../repo/social";
 import { searchTypes, matchingPeople, getPublicProfile } from "../repo/people";
+import { getUserById, updateUser, type UserRow } from "../repo/users";
+
+/** Map a DB user row to the camelCase shape the frontend expects. */
+function toUserResponse(u: UserRow) {
+  return {
+    id: u.id,
+    displayName: u.display_name ?? u.email.split("@")[0],
+    bio: u.bio ?? "",
+    age: u.age ?? 0,
+    location: u.location ?? "",
+    avatarUrl: u.avatar_url ?? "",
+    primaryTribeId: "",
+    interestIds: [] as string[],
+    activityLevel: u.activity_level ?? "MEDIUM",
+    createdAt: u.created_at,
+  };
+}
 
 /** Feed, posts, follows, type search, matching people, public profiles. */
 export function socialRoutes() {
@@ -43,6 +60,28 @@ export function socialRoutes() {
   r.get("/people/matches", async (c) => {
     const people = await matchingPeople(c.get("userId"));
     return c.json({ success: true, data: people });
+  });
+
+  // Current user's own profile — must be registered before "/users/:id"
+  // so the literal "me" isn't captured as an :id (and parsed as a uuid).
+  r.get("/users/me", async (c) => {
+    const u = await getUserById(c.get("userId"));
+    if (!u) return c.json({ success: false, error: "user not found" }, 404);
+    return c.json({ success: true, data: toUserResponse(u) });
+  });
+
+  r.put("/users/me", async (c) => {
+    const body = z
+      .object({
+        displayName: z.string().optional(),
+        bio: z.string().optional(),
+        age: z.number().optional(),
+        location: z.string().optional(),
+        activityLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+      })
+      .parse(await c.req.json());
+    const u = await updateUser(c.get("userId"), body);
+    return c.json({ success: true, data: toUserResponse(u) });
   });
 
   r.get("/users/:id", async (c) => {
