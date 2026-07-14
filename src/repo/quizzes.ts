@@ -10,6 +10,8 @@ export interface QuizRow {
   score: number | null;
   time_limit_sec: number;
   attempt_no: number;
+  est_min: number;
+  est_max: number;
   started_at: string | null;
   submitted_at: string | null;
 }
@@ -20,10 +22,12 @@ export async function createQuiz(
   questions: QuizQuestion[],
   timeLimitSec: number,
   attemptNo: number,
+  estMin: number,
+  estMax: number,
 ): Promise<QuizRow> {
   const rows = await sql<QuizRow[]>`
-    insert into quizzes (type_id, user_id, questions, time_limit_sec, attempt_no, started_at)
-    values (${typeId}, ${userId}, ${sql.json(questions as unknown as object)}, ${timeLimitSec}, ${attemptNo}, now())
+    insert into quizzes (type_id, user_id, questions, time_limit_sec, attempt_no, est_min, est_max, started_at)
+    values (${typeId}, ${userId}, ${sql.json(questions as unknown as object)}, ${timeLimitSec}, ${attemptNo}, ${estMin}, ${estMax}, now())
     returning *`;
   return rows[0];
 }

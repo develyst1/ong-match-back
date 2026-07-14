@@ -27,12 +27,14 @@ export function typesRoutes(chatFn: ChatFn) {
 
     const userId = c.get("userId");
     const type = await createType(userId, verdict.normalizedTitle, body.description, verdict.tags);
-    const quiz = await generateQuiz(chatFn, verdict.normalizedTitle, body.description, "beginner");
-    const saved = await createQuiz(type.id, userId, quiz.questions, quiz.timeLimitSec, 1);
+    const quiz = await generateQuiz(chatFn, verdict.normalizedTitle, body.description, `${verdict.estMin}-${verdict.estMax}`);
+    const saved = await createQuiz(type.id, userId, quiz.questions, quiz.timeLimitSec, 1, verdict.estMin, verdict.estMax);
     return c.json({
       success: true,
       data: {
         type,
+        // verdict is the qualitative blurb; the numeric band stays hidden from the client.
+        verdict: verdict.verdict,
         quiz: { id: saved.id, questions: stripAnswers(quiz.questions), timeLimitSec: quiz.timeLimitSec },
       },
     });
@@ -47,16 +49,16 @@ export function typesRoutes(chatFn: ChatFn) {
     if (!quiz) return c.json({ success: false, error: "quiz not found" }, 404);
 
     const graded = await gradeQuiz(chatFn, quiz.questions, body.answers, body.elapsedSec);
-    const passed = graded.score >= RULES.passScore && !graded.suspectedFake;
+    // Level lands inside the AI-estimated band; below failScore (or faked) → fail.
+    const banded = RULES.levelInBand(graded.score, quiz.est_min, quiz.est_max);
+    const passed = banded > 0 && !graded.suspectedFake;
     await markGraded(id, passed ? "passed" : "failed", graded.score);
 
     let level = 0;
     if (passed) {
       const t = await getType(quiz.type_id);
-      level =
-        quiz.attempt_no === 1
-          ? RULES.initialLevel(graded.score)
-          : Math.min(100, (t?.level ?? 0) + Math.max(0, RULES.relevelDelta(graded.score)));
+      // Re-level never lowers an existing level; take the higher of current vs banded.
+      level = quiz.attempt_no === 1 ? banded : Math.min(100, Math.max(t?.level ?? 0, banded));
       await setLevel(quiz.type_id, level);
     }
     return c.json({ success: true, data: { passed, score: graded.score, level, feedback: graded.perQuestion } });
@@ -73,8 +75,11 @@ export function typesRoutes(chatFn: ChatFn) {
     }
 
     const userId = c.get("userId");
-    const quiz = await generateQuiz(chatFn, type.title, type.description ?? "", `level ${type.level}+`);
-    const saved = await createQuiz(typeId, userId, quiz.questions, quiz.timeLimitSec, 2);
+    // Re-level aims one band above the current level.
+    const estMin = Math.min(100, type.level + 5);
+    const estMax = Math.min(100, type.level + 25);
+    const quiz = await generateQuiz(chatFn, type.title, type.description ?? "", `level ${type.level}+ (${estMin}-${estMax})`);
+    const saved = await createQuiz(typeId, userId, quiz.questions, quiz.timeLimitSec, 2, estMin, estMax);
     return c.json({
       success: true,
       data: { quiz: { id: saved.id, questions: stripAnswers(quiz.questions), timeLimitSec: quiz.timeLimitSec } },

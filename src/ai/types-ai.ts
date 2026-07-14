@@ -20,15 +20,34 @@ export async function validateType(chatFn: ChatFn, title: string, description: s
       { role: "system", content: GUARDRAIL_SYS },
       { role: "user", content: `title: ${title}\ndescription: ${description}` },
     ]);
-    const j = extractJson<{ valid?: boolean; reason?: string; normalizedTitle?: string; tags?: unknown[] }>(out);
+    const j = extractJson<{
+      valid?: boolean; reason?: string; normalizedTitle?: string; tags?: unknown[];
+      estMin?: number; estMax?: number; verdict?: string;
+    }>(out);
+    // Normalize the estimated band: clamp, order, and keep a sane minimum width.
+    let estMin = clamp(Number(j.estMin) || 10, 1, 100);
+    let estMax = clamp(Number(j.estMax) || 35, 1, 100);
+    if (estMin > estMax) [estMin, estMax] = [estMax, estMin];
+    if (estMax - estMin < 10) estMax = clamp(estMin + 15, 1, 100);
     return {
       valid: !!j.valid,
       reason: String(j.reason ?? ""),
       normalizedTitle: String(j.normalizedTitle ?? title),
       tags: Array.isArray(j.tags) ? j.tags.map(String).slice(0, 8) : [],
+      estMin,
+      estMax,
+      verdict: String(j.verdict ?? "ดูน่าสนใจ ลองทำแบบทดสอบกัน"),
     };
   } catch {
-    return { valid: false, reason: "ระบบตรวจไทป์ไม่สำเร็จ ลองใหม่อีกครั้ง", normalizedTitle: title, tags: [] as string[] };
+    return {
+      valid: false,
+      reason: "ระบบตรวจไทป์ไม่สำเร็จ ลองใหม่อีกครั้ง",
+      normalizedTitle: title,
+      tags: [] as string[],
+      estMin: 10,
+      estMax: 35,
+      verdict: "",
+    };
   }
 }
 

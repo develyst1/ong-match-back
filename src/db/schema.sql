@@ -44,5 +44,29 @@ create table if not exists quizzes (
   created_at timestamptz not null default now()
 );
 
+-- Hidden estimated level band the AI predicts from the story; the quiz
+-- confirms where within [est_min, est_max] the user actually lands.
+alter table quizzes add column if not exists est_min int not null default 1;
+alter table quizzes add column if not exists est_max int not null default 40;
+
+-- Social layer (Phase 2): posts feed + follow graph.
+create table if not exists posts (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  content text not null,
+  type_id uuid references types(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists follows (
+  follower_id uuid not null references users(id) on delete cascade,
+  followee_id uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, followee_id)
+);
+
 create index if not exists idx_types_user on types(user_id);
 create index if not exists idx_quizzes_type on quizzes(type_id);
+create index if not exists idx_posts_user on posts(user_id);
+create index if not exists idx_posts_created on posts(created_at desc);
+create index if not exists idx_type_tags_tag on type_tags(tag);
