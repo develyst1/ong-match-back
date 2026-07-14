@@ -77,6 +77,66 @@ export async function matchingPeople(userId: string): Promise<MatchingPerson[]> 
     limit 20`;
 }
 
+export interface ContactCheck {
+  allowed: boolean;
+  reason: string;
+  typeTitle?: string;
+  requiredLevel?: number;
+  yourLevel?: number;
+}
+
+/**
+ * Can `callerId` start a chat with `targetId`? Yes if there is a target type
+ * whose tags overlap one of the caller's types AND the caller's level in that
+ * shared-tag type meets the target type's `min_contact_level`. When blocked,
+ * returns the closest gate (smallest level shortfall) for a helpful message.
+ */
+export async function canContact(callerId: string, targetId: string): Promise<ContactCheck> {
+  if (callerId === targetId) return { allowed: true, reason: "นี่คือโปรไฟล์ของคุณเอง" };
+
+  const targetTypes = await sql<{ title: string; min: number; tags: string[] }[]>`
+    select t.title, t.min_contact_level as min,
+           coalesce(array_agg(distinct tt.tag) filter (where tt.tag is not null), '{}') as tags
+    from types t left join type_tags tt on tt.type_id = t.id
+    where t.user_id = ${targetId} and t.expires_at > now()
+    group by t.id`;
+  if (targetTypes.length === 0) return { allowed: false, reason: "ผู้ใช้นี้ยังไม่มีไทป์ให้เริ่มคุย" };
+
+  const callerTypes = await sql<{ level: number; tags: string[] }[]>`
+    select t.level, coalesce(array_agg(distinct tt.tag) filter (where tt.tag is not null), '{}') as tags
+    from types t left join type_tags tt on tt.type_id = t.id
+    where t.user_id = ${callerId} and t.expires_at > now()
+    group by t.id`;
+
+  let closestGate: ContactCheck | null = null;
+  for (const tt of targetTypes) {
+    const sharing = callerTypes.filter((ct) => ct.tags.some((tag) => tt.tags.includes(tag)));
+    if (sharing.length === 0) continue;
+    const yourLevel = Math.max(...sharing.map((s) => s.level));
+    if (yourLevel >= tt.min) {
+      return {
+        allowed: true,
+        reason: `คุณผ่านเกณฑ์ไทป์ "${tt.title}"`,
+        typeTitle: tt.title,
+        requiredLevel: tt.min,
+        yourLevel,
+      };
+    }
+    const gap = tt.min - yourLevel;
+    const prevGap = closestGate ? closestGate.requiredLevel! - closestGate.yourLevel! : Infinity;
+    if (gap < prevGap) {
+      closestGate = {
+        allowed: false,
+        reason: `ต้องมีเลเวลไทป์ "${tt.title}" อย่างน้อย ${tt.min} (คุณมี ${yourLevel})`,
+        typeTitle: tt.title,
+        requiredLevel: tt.min,
+        yourLevel,
+      };
+    }
+  }
+  return closestGate ?? { allowed: false, reason: "คุณยังไม่มีไทป์ตรงกับผู้ใช้นี้" };
+}
+
 export async function getPublicProfile(userId: string): Promise<PublicProfile | null> {
   const users = await sql<{ id: string; display_name: string | null; avatar_url: string | null; bio: string | null; location: string | null }[]>`
     select id, display_name, avatar_url, bio, location from users where id = ${userId}`;

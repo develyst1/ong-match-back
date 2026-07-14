@@ -2,8 +2,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { userMiddleware } from "../middleware/user";
 import { createPost, getFeed, follow, unfollow } from "../repo/social";
-import { searchTypes, matchingPeople, getPublicProfile } from "../repo/people";
-import { getUserById, updateUser, type UserRow } from "../repo/users";
+import { searchTypes, matchingPeople, getPublicProfile, canContact } from "../repo/people";
+import { getUserById, updateUser, PG_UNIQUE_VIOLATION, type UserRow } from "../repo/users";
 
 /** Map a DB user row to the camelCase shape the frontend expects. */
 function toUserResponse(u: UserRow) {
@@ -14,6 +14,8 @@ function toUserResponse(u: UserRow) {
     age: u.age ?? 0,
     location: u.location ?? "",
     avatarUrl: u.avatar_url ?? "",
+    coverUrl: u.cover_url ?? "",
+    phone: u.phone ?? "",
     primaryTribeId: "",
     interestIds: [] as string[],
     activityLevel: u.activity_level ?? "MEDIUM",
@@ -77,11 +79,26 @@ export function socialRoutes() {
         bio: z.string().optional(),
         age: z.number().optional(),
         location: z.string().optional(),
+        avatarUrl: z.string().optional(),
+        coverUrl: z.string().optional(),
+        phone: z.string().optional(),
         activityLevel: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
       })
       .parse(await c.req.json());
-    const u = await updateUser(c.get("userId"), body);
-    return c.json({ success: true, data: toUserResponse(u) });
+    try {
+      const u = await updateUser(c.get("userId"), body);
+      return c.json({ success: true, data: toUserResponse(u) });
+    } catch (e) {
+      if ((e as { code?: string })?.code === PG_UNIQUE_VIOLATION) {
+        return c.json({ success: false, error: "เบอร์นี้ถูกใช้สมัครแล้ว" }, 409);
+      }
+      throw e;
+    }
+  });
+
+  r.get("/users/:id/can-contact", async (c) => {
+    const check = await canContact(c.get("userId"), c.req.param("id"));
+    return c.json({ success: true, data: check });
   });
 
   r.get("/users/:id", async (c) => {

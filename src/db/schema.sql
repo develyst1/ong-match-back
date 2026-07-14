@@ -12,6 +12,14 @@ create table if not exists users (
   created_at timestamptz not null default now()
 );
 
+-- Profile cover / badge background image (stored as a data URL).
+alter table users add column if not exists cover_url text;
+
+-- Phone number: one account per phone (anti multi-account). Partial unique so
+-- existing/demo rows with NULL phone are unaffected.
+alter table users add column if not exists phone text;
+create unique index if not exists idx_users_phone on users(phone) where phone is not null;
+
 create table if not exists types (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
@@ -48,6 +56,10 @@ create table if not exists quizzes (
 -- confirms where within [est_min, est_max] the user actually lands.
 alter table quizzes add column if not exists est_min int not null default 1;
 alter table quizzes add column if not exists est_max int not null default 40;
+
+-- Chat policy: minimum level a sender must reach (in a tag-matching type) to
+-- start a chat about this type with the owner. 0 = no requirement.
+alter table types add column if not exists min_contact_level int not null default 0;
 
 -- Social layer (Phase 2): posts feed + follow graph.
 create table if not exists posts (

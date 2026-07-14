@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { userMiddleware } from "../middleware/user";
-import { validateType, generateQuiz, gradeQuiz } from "../ai/types-ai";
+import { validateType, suggestTypes, generateQuiz, gradeQuiz } from "../ai/types-ai";
 import type { QuizQuestion } from "../ai/types-ai";
-import { createType, getType, setLevel, listMyTypes } from "../repo/types";
+import { createType, getType, setLevel, listMyTypes, setMinContactLevel } from "../repo/types";
 import { createQuiz, getQuiz, markGraded, lastAttemptAt } from "../repo/quizzes";
 import { RULES } from "../config/rules";
 import type { ChatMsg } from "../ai/client";
@@ -17,6 +17,17 @@ const stripAnswers = (qs: QuizQuestion[]) =>
 export function typesRoutes(chatFn: ChatFn) {
   const r = new Hono<{ Variables: { userId: string } }>();
   r.use("*", userMiddleware);
+
+  // Story-first creation: the user tells a story, AI proposes 2-3 type names
+  // to pick from (the user no longer names the type by hand).
+  r.post("/types/suggest", async (c) => {
+    const body = z.object({ story: z.string().min(10) }).parse(await c.req.json());
+    const candidates = await suggestTypes(chatFn, body.story);
+    if (candidates.length === 0) {
+      return c.json({ success: false, error: "AI แนะนำไทป์ไม่สำเร็จ ลองเล่าให้ละเอียดขึ้น" }, 422);
+    }
+    return c.json({ success: true, data: { candidates } });
+  });
 
   r.post("/types/validate", async (c) => {
     const body = z
@@ -89,6 +100,14 @@ export function typesRoutes(chatFn: ChatFn) {
   r.get("/types/me", async (c) => {
     const list = await listMyTypes(c.get("userId"));
     return c.json({ success: true, data: list });
+  });
+
+  // Chat policy: set the minimum sender level required to chat about this type.
+  r.put("/types/:id/requirement", async (c) => {
+    const body = z.object({ minLevel: z.number().int().min(0).max(100) }).parse(await c.req.json());
+    const ok = await setMinContactLevel(c.req.param("id"), c.get("userId"), body.minLevel);
+    if (!ok) return c.json({ success: false, error: "type not found" }, 404);
+    return c.json({ success: true, data: { minContactLevel: body.minLevel } });
   });
 
   return r;

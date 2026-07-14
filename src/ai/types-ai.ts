@@ -1,6 +1,12 @@
 import { extractJson } from "./json";
-import { GUARDRAIL_SYS, QUIZGEN_SYS, GRADE_SYS } from "./prompts";
+import { GUARDRAIL_SYS, SUGGEST_SYS, QUIZGEN_SYS, GRADE_SYS } from "./prompts";
 import type { ChatMsg } from "./client";
+
+export interface TypeCandidate {
+  title: string;
+  blurb: string;
+  tags: string[];
+}
 
 export interface QuizQuestion {
   id: string;
@@ -48,6 +54,28 @@ export async function validateType(chatFn: ChatFn, title: string, description: s
       estMax: 35,
       verdict: "",
     };
+  }
+}
+
+/** Story → 2-3 candidate types for the user to pick from (no naming by hand). */
+export async function suggestTypes(chatFn: ChatFn, story: string): Promise<TypeCandidate[]> {
+  try {
+    const out = await chatFn([
+      { role: "system", content: SUGGEST_SYS },
+      { role: "user", content: story },
+    ]);
+    const j = extractJson<{ candidates?: TypeCandidate[] }>(out);
+    const list = Array.isArray(j.candidates) ? j.candidates : [];
+    return list
+      .filter((c) => c && typeof c.title === "string" && c.title.trim())
+      .slice(0, 3)
+      .map((c) => ({
+        title: String(c.title).trim(),
+        blurb: String(c.blurb ?? "").trim(),
+        tags: Array.isArray(c.tags) ? c.tags.map(String).slice(0, 6) : [],
+      }));
+  } catch {
+    return [];
   }
 }
 
