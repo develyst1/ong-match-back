@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { serveStatic } from "hono/bun";
 import { typesRoutes } from "./routes/types";
 import { socialRoutes } from "./routes/social";
 import { chatRoutes } from "./routes/chat";
 import { roomsRoutes } from "./routes/rooms";
+import { uploadsRoutes } from "./routes/uploads";
 import { chat } from "./ai/client";
 import type { ChatMsg } from "./ai/client";
 
@@ -14,9 +16,12 @@ export function createApp(chatFn: (m: ChatMsg[]) => Promise<string> = chat): Hon
   const app = new Hono();
   app.use("*", cors());
   app.get("/health", (c) => c.json({ success: true, data: { status: "ok" } }));
+  // Serve uploaded images statically (browser-cacheable; not shipped in JSON).
+  app.use("/uploads/*", serveStatic({ root: "./" }));
   app.route("/api/v1", typesRoutes(chatFn));
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", chatRoutes());
   app.route("/api/v1", roomsRoutes());
+  app.route("/api/v1", uploadsRoutes());
   return app;
 }
