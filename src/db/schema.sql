@@ -95,9 +95,20 @@ create table if not exists messages (
   created_at timestamptz not null default now()
 );
 
+-- Group chat: one room per tag ("ไทป์รูม"). Membership is implicit — anyone
+-- with an active type carrying that tag can read/post. No room table needed.
+create table if not exists group_messages (
+  id uuid primary key default gen_random_uuid(),
+  tag text not null,
+  sender_id uuid not null references users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_types_user on types(user_id);
 create index if not exists idx_quizzes_type on quizzes(type_id);
 create index if not exists idx_posts_user on posts(user_id);
 create index if not exists idx_posts_created on posts(created_at desc);
 create index if not exists idx_type_tags_tag on type_tags(tag);
 create index if not exists idx_messages_conv on messages(conversation_id, created_at);
+create index if not exists idx_group_messages_tag on group_messages(tag, created_at);
