@@ -20,6 +20,10 @@ alter table users add column if not exists cover_url text;
 alter table users add column if not exists phone text;
 create unique index if not exists idx_users_phone on users(phone) where phone is not null;
 
+-- Argon2id hash of the account password. NULL = account cannot log in (no
+-- password was ever set); real accounts are only created via /auth/register.
+alter table users add column if not exists password_hash text;
+
 create table if not exists types (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/bun";
+import { authRoutes } from "./routes/auth";
 import { typesRoutes } from "./routes/types";
 import { socialRoutes } from "./routes/social";
 import { chatRoutes } from "./routes/chat";
@@ -18,6 +19,8 @@ export function createApp(chatFn: (m: ChatMsg[]) => Promise<string> = chat): Hon
   app.get("/health", (c) => c.json({ success: true, data: { status: "ok" } }));
   // Serve uploaded images statically (browser-cacheable; not shipped in JSON).
   app.use("/uploads/*", serveStatic({ root: "./" }));
+  // Public: the only routes that don't require a token.
+  app.route("/api/v1", authRoutes());
   app.route("/api/v1", typesRoutes(chatFn));
   app.route("/api/v1", socialRoutes());
   app.route("/api/v1", chatRoutes());

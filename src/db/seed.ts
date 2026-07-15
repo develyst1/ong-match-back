@@ -77,16 +77,20 @@ const USERS: SeedUser[] = [
   },
 ];
 
+/** Shared password for every demo account (login: <email> / DEMO_PASSWORD). */
+export const DEMO_PASSWORD = "ongmatch123";
+
 async function seed() {
   await migrate();
   // Wipe previous demo data (cascade cleans types/tags/quizzes/posts/follows).
   await sql`delete from users where email like ${"%@ong.demo"}`;
 
+  const passwordHash = await Bun.password.hash(DEMO_PASSWORD);
   const ids: string[] = [];
   for (const u of USERS) {
     const [row] = await sql<{ id: string }[]>`
-      insert into users (email, display_name, bio, age, location, activity_level)
-      values (${u.email}, ${u.name}, ${u.bio}, ${u.age}, ${u.location}, 'HIGH')
+      insert into users (email, password_hash, display_name, bio, age, location, activity_level)
+      values (${u.email}, ${passwordHash}, ${u.name}, ${u.bio}, ${u.age}, ${u.location}, 'HIGH')
       returning id`;
     ids.push(row.id);
     let firstTypeId: string | null = null;
@@ -106,7 +110,7 @@ async function seed() {
   // A few follow edges among demo users so the graph isn't empty.
   await sql`insert into follows (follower_id, followee_id) values (${ids[0]}, ${ids[8]}), (${ids[8]}, ${ids[0]}), (${ids[2]}, ${ids[3]}) on conflict do nothing`;
 
-  console.log(`seeded ${USERS.length} demo users`);
+  console.log(`seeded ${USERS.length} demo users (login: ${USERS[0].email} / ${DEMO_PASSWORD})`);
 }
 
 if (import.meta.main) {

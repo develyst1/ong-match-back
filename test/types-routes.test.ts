@@ -1,9 +1,15 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, beforeAll } from "bun:test";
 import { migrate } from "../src/db/migrate";
 import { createApp } from "../src/app";
+import { makeUser } from "./helpers";
 import type { ChatMsg } from "../src/ai/client";
 
-const H = { "Content-Type": "application/json", "x-user-email": `r${Date.now()}@x.co` };
+let H: Record<string, string>;
+
+beforeAll(async () => {
+  await migrate();
+  H = (await makeUser(`r${Date.now()}@x.co`)).headers;
+});
 
 const okChat = async (msgs: ChatMsg[]) => {
   const sys = msgs[0].content;
