@@ -26,6 +26,7 @@ export interface PublicProfile {
   id: string;
   display_name: string | null;
   avatar_url: string | null;
+  cover_url: string | null;
   bio: string | null;
   location: string | null;
   types: { id: string; title: string; level: number; daysLeft: number; status: string }[];
@@ -164,8 +165,8 @@ export async function canContact(callerId: string, targetId: string): Promise<Co
 }
 
 export async function getPublicProfile(userId: string): Promise<PublicProfile | null> {
-  const users = await sql<{ id: string; display_name: string | null; avatar_url: string | null; bio: string | null; location: string | null }[]>`
-    select id, display_name, avatar_url, bio, location from users where id = ${userId}`;
+  const users = await sql<{ id: string; display_name: string | null; avatar_url: string | null; cover_url: string | null; bio: string | null; location: string | null }[]>`
+    select id, display_name, avatar_url, cover_url, bio, location from users where id = ${userId}`;
   if (!users[0]) return null;
   const types = await sql<{ id: string; title: string; level: number; days_left: number; expires_at: string }[]>`
     select id, title, level, expires_at,
