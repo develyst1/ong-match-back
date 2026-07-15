@@ -6,6 +6,9 @@ import { createType, setLevel, setMinContactLevel } from "../src/repo/types";
 
 const json = { "Content-Type": "application/json" };
 
+/** Read the `data` payload from a Hono test Response (typed loosely for tests). */
+const data = async (r: Response): Promise<any> => (await r.json() as { data: unknown }).data;
+
 describe("chat", () => {
   it("gates conversation creation then allows chatting once eligible", async () => {
     await migrate();
@@ -35,27 +38,27 @@ describe("chat", () => {
       method: "POST", headers: hA, body: JSON.stringify({ targetUserId: b.id }),
     });
     expect(created.status).toBe(200);
-    const convId = (await created.json()).data.id as string;
+    const convId = (await data(created)).id as string;
 
     // Idempotent: same pair returns the same conversation.
     const again = await app.request("/api/v1/conversations", {
       method: "POST", headers: hB, body: JSON.stringify({ targetUserId: a.id }),
     });
-    expect((await again.json()).data.id).toBe(convId);
+    expect((await data(again)).id).toBe(convId);
 
     // A sends a message; B sees it (not mine); polling with `after` works.
     await app.request(`/api/v1/conversations/${convId}/messages`, {
       method: "POST", headers: hA, body: JSON.stringify({ content: "หวัดดีเพื่อนสายกีตาร์" }),
     });
     const bView = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hB });
-    const bMsgs = (await bView.json()).data;
+    const bMsgs = await data(bView);
     expect(bMsgs.length).toBe(1);
     expect(bMsgs[0].isMine).toBe(false);
     expect(bMsgs[0].content).toBe("หวัดดีเพื่อนสายกีตาร์");
 
     // A sees the same message as mine.
     const aView = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hA });
-    expect((await aView.json()).data[0].isMine).toBe(true);
+    expect((await data(aView))[0].isMine).toBe(true);
 
     // A non-member is forbidden.
     const cUser = await upsertUserByEmail(`chatC${stamp}@x.co`);
@@ -66,7 +69,7 @@ describe("chat", () => {
 
     // Conversation list shows the peer + last message.
     const list = await app.request("/api/v1/conversations", { headers: hA });
-    const convs = (await list.json()).data;
+    const convs = await data(list);
     const found = convs.find((x: { id: string }) => x.id === convId);
     expect(found.peer_id).toBe(b.id);
     expect(found.last_message).toBe("หวัดดีเพื่อนสายกีตาร์");

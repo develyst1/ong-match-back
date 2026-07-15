@@ -27,7 +27,7 @@ export async function createQuiz(
 ): Promise<QuizRow> {
   const rows = await sql<QuizRow[]>`
     insert into quizzes (type_id, user_id, questions, time_limit_sec, attempt_no, est_min, est_max, started_at)
-    values (${typeId}, ${userId}, ${sql.json(questions as unknown as object)}, ${timeLimitSec}, ${attemptNo}, ${estMin}, ${estMax}, now())
+    values (${typeId}, ${userId}, ${JSON.stringify(questions)}::jsonb, ${timeLimitSec}, ${attemptNo}, ${estMin}, ${estMax}, now())
     returning *`;
   return rows[0];
 }

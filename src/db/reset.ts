@@ -7,7 +7,7 @@ import { migrate } from "./migrate";
  */
 export async function reset(): Promise<void> {
   await sql`drop table if exists
-    quizzes, type_tags, posts, follows, types, users cascade`;
+    messages, conversations, quizzes, type_tags, posts, follows, types, users cascade`;
   await migrate();
 }
 

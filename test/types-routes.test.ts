@@ -25,7 +25,7 @@ describe("types routes", () => {
       body: JSON.stringify({ title: "กีตาร์", description: "เล่นมา 5 ปี" }),
     });
     expect(v.status).toBe(200);
-    const vb = await v.json();
+    const vb = (await v.json()) as any;
     const quizId = vb.data.quiz.id;
     expect(vb.data.quiz.questions.length).toBeGreaterThanOrEqual(3);
     expect(vb.data.quiz.questions[0].expected).toBeUndefined();
@@ -35,12 +35,12 @@ describe("types routes", () => {
       headers: H,
       body: JSON.stringify({ answers: ["a", "b", "c"], elapsedSec: 40 }),
     });
-    const sb = await s.json();
+    const sb = (await s.json()) as any;
     expect(sb.data.passed).toBe(true);
     expect(sb.data.level).toBeGreaterThan(0);
 
     const me = await app.request("/api/v1/types/me", { headers: H });
-    const mb = await me.json();
+    const mb = (await me.json()) as any;
     expect(mb.data.some((t: { level: number; daysLeft: number }) => t.level > 0 && t.daysLeft > 28)).toBe(true);
   });
 
