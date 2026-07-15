@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { typesRoutes } from "./routes/types";
 import { socialRoutes } from "./routes/social";
+import { chatRoutes } from "./routes/chat";
 import { chat } from "./ai/client";
 import type { ChatMsg } from "./ai/client";
 
@@ -14,5 +15,6 @@ export function createApp(chatFn: (m: ChatMsg[]) => Promise<string> = chat): Hon
   app.get("/health", (c) => c.json({ success: true, data: { status: "ok" } }));
   app.route("/api/v1", typesRoutes(chatFn));
   app.route("/api/v1", socialRoutes());
+  app.route("/api/v1", chatRoutes());
   return app;
 }

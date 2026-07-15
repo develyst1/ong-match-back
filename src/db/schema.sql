@@ -77,8 +77,27 @@ create table if not exists follows (
   primary key (follower_id, followee_id)
 );
 
+-- Real 1:1 chat (Phase 3.1). One conversation per unordered user pair
+-- (user_lo < user_hi keeps it canonical so a pair can't create duplicates).
+create table if not exists conversations (
+  id uuid primary key default gen_random_uuid(),
+  user_lo uuid not null references users(id) on delete cascade,
+  user_hi uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_lo, user_hi)
+);
+
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  sender_id uuid not null references users(id) on delete cascade,
+  content text not null,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists idx_types_user on types(user_id);
 create index if not exists idx_quizzes_type on quizzes(type_id);
 create index if not exists idx_posts_user on posts(user_id);
 create index if not exists idx_posts_created on posts(created_at desc);
 create index if not exists idx_type_tags_tag on type_tags(tag);
+create index if not exists idx_messages_conv on messages(conversation_id, created_at);

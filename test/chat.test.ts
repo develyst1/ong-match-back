@@ -1,0 +1,74 @@
+import { describe, it, expect } from "bun:test";
+import { migrate } from "../src/db/migrate";
+import { createApp } from "../src/app";
+import { upsertUserByEmail } from "../src/repo/users";
+import { createType, setLevel, setMinContactLevel } from "../src/repo/types";
+
+const json = { "Content-Type": "application/json" };
+
+describe("chat", () => {
+  it("gates conversation creation then allows chatting once eligible", async () => {
+    await migrate();
+    const stamp = Date.now();
+    const a = await upsertUserByEmail(`chatA${stamp}@x.co`);
+    const b = await upsertUserByEmail(`chatB${stamp}@x.co`);
+
+    // Both share the tag "กีตาร์"; A is level 50 in the shared type.
+    const ta = await createType(a.id, `กีตาร์A${stamp}`, "", ["กีตาร์"]);
+    await setLevel(ta.id, 50);
+    const tb = await createType(b.id, `กีตาร์B${stamp}`, "", ["กีตาร์"]);
+
+    const app = createApp();
+    const hA = { ...json, "x-user-email": `chatA${stamp}@x.co` };
+    const hB = { ...json, "x-user-email": `chatB${stamp}@x.co` };
+
+    // B requires level 90 → A (50) is blocked.
+    await setMinContactLevel(tb.id, b.id, 90);
+    const blocked = await app.request("/api/v1/conversations", {
+      method: "POST", headers: hA, body: JSON.stringify({ targetUserId: b.id }),
+    });
+    expect(blocked.status).toBe(403);
+
+    // Lower to 40 → A (50) can now start the conversation.
+    await setMinContactLevel(tb.id, b.id, 40);
+    const created = await app.request("/api/v1/conversations", {
+      method: "POST", headers: hA, body: JSON.stringify({ targetUserId: b.id }),
+    });
+    expect(created.status).toBe(200);
+    const convId = (await created.json()).data.id as string;
+
+    // Idempotent: same pair returns the same conversation.
+    const again = await app.request("/api/v1/conversations", {
+      method: "POST", headers: hB, body: JSON.stringify({ targetUserId: a.id }),
+    });
+    expect((await again.json()).data.id).toBe(convId);
+
+    // A sends a message; B sees it (not mine); polling with `after` works.
+    await app.request(`/api/v1/conversations/${convId}/messages`, {
+      method: "POST", headers: hA, body: JSON.stringify({ content: "หวัดดีเพื่อนสายกีตาร์" }),
+    });
+    const bView = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hB });
+    const bMsgs = (await bView.json()).data;
+    expect(bMsgs.length).toBe(1);
+    expect(bMsgs[0].isMine).toBe(false);
+    expect(bMsgs[0].content).toBe("หวัดดีเพื่อนสายกีตาร์");
+
+    // A sees the same message as mine.
+    const aView = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hA });
+    expect((await aView.json()).data[0].isMine).toBe(true);
+
+    // A non-member is forbidden.
+    const cUser = await upsertUserByEmail(`chatC${stamp}@x.co`);
+    void cUser;
+    const hC = { ...json, "x-user-email": `chatC${stamp}@x.co` };
+    const forbidden = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hC });
+    expect(forbidden.status).toBe(403);
+
+    // Conversation list shows the peer + last message.
+    const list = await app.request("/api/v1/conversations", { headers: hA });
+    const convs = (await list.json()).data;
+    const found = convs.find((x: { id: string }) => x.id === convId);
+    expect(found.peer_id).toBe(b.id);
+    expect(found.last_message).toBe("หวัดดีเพื่อนสายกีตาร์");
+  });
+});
