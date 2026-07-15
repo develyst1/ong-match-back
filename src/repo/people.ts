@@ -51,6 +51,32 @@ export async function searchTypes(q: string, tags: string[]): Promise<TypeSearch
   return rows.map((r) => ({ ...r, tags: r.tags ?? [] }));
 }
 
+export interface TrendingTag {
+  tag: string;
+  people: number;
+  types: number;
+  sample_titles: string[];
+}
+
+/**
+ * Trending tag-groups: cluster active types by tag and rank by how many distinct
+ * people use each tag (e.g. "กีตาร์" spanning ชอบเล่นกีตาร์ / กีตาร์ไฟฟ้า / กีตาร์โปร่ง).
+ */
+export async function trendingTags(limit = 12): Promise<TrendingTag[]> {
+  const rows = await sql<(Omit<TrendingTag, "sample_titles"> & { sample_titles: string[] | null })[]>`
+    select tt.tag,
+           count(distinct t.user_id)::int as people,
+           count(distinct t.id)::int as types,
+           (array_agg(distinct t.title))[1:3] as sample_titles
+    from type_tags tt
+    join types t on t.id = tt.type_id
+    where t.expires_at > now()
+    group by tt.tag
+    order by people desc, types desc, tt.tag asc
+    limit ${limit}`;
+  return rows.map((r) => ({ ...r, sample_titles: r.sample_titles ?? [] }));
+}
+
 /**
  * People (not me) whose types share a tag with mine, ranked by how close their
  * level is to my matching type's level — closest first.

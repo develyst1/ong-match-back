@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { userMiddleware } from "../middleware/user";
 import { createPost, getFeed, follow, unfollow } from "../repo/social";
-import { searchTypes, matchingPeople, getPublicProfile, canContact } from "../repo/people";
+import { searchTypes, matchingPeople, getPublicProfile, canContact, trendingTags } from "../repo/people";
 import { getUserById, updateUser, PG_UNIQUE_VIOLATION, type UserRow } from "../repo/users";
 
 /** Map a DB user row to the camelCase shape the frontend expects. */
@@ -62,6 +62,11 @@ export function socialRoutes() {
   r.get("/people/matches", async (c) => {
     const people = await matchingPeople(c.get("userId"));
     return c.json({ success: true, data: people });
+  });
+
+  r.get("/tags/trending", async (c) => {
+    const tags = await trendingTags();
+    return c.json({ success: true, data: tags });
   });
 
   // Current user's own profile — must be registered before "/users/:id"
