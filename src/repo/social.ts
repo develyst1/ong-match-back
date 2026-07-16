@@ -19,6 +19,25 @@ export async function createPost(userId: string, content: string, typeId: string
   return rows[0];
 }
 
+export interface UserPost {
+  id: string;
+  content: string;
+  type_title: string | null;
+  type_level: number | null;
+  created_at: string;
+}
+
+/** A single user's own posts (for their profile), newest first. */
+export async function userPosts(userId: string): Promise<UserPost[]> {
+  return sql<UserPost[]>`
+    select p.id, p.content, p.created_at, t.title as type_title, t.level as type_level
+    from posts p
+    left join types t on t.id = p.type_id
+    where p.user_id = ${userId}
+    order by p.created_at desc
+    limit 40`;
+}
+
 /** Recent posts, tagged by relationship to the caller (you / following / recommended). */
 export async function getFeed(userId: string): Promise<FeedItem[]> {
   const rows = await sql<(Omit<FeedItem, "source"> & { followed: boolean; is_self: boolean })[]>`

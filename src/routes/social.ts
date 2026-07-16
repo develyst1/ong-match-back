@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { userMiddleware } from "../middleware/user";
-import { createPost, getFeed, follow, unfollow } from "../repo/social";
+import { createPost, getFeed, follow, unfollow, userPosts } from "../repo/social";
 import { searchTypes, matchingPeople, getPublicProfile, canContact, trendingTags } from "../repo/people";
 import { getUserById, updateUser, PG_UNIQUE_VIOLATION, type UserRow } from "../repo/users";
 
@@ -104,6 +104,11 @@ export function socialRoutes() {
   r.get("/users/:id/can-contact", async (c) => {
     const check = await canContact(c.get("userId"), c.req.param("id"));
     return c.json({ success: true, data: check });
+  });
+
+  r.get("/users/:id/posts", async (c) => {
+    const posts = await userPosts(c.req.param("id"));
+    return c.json({ success: true, data: posts });
   });
 
   r.get("/users/:id", async (c) => {
