@@ -27,6 +27,28 @@ export async function getUserById(userId: string): Promise<UserRow | null> {
   return rows[0] ?? null;
 }
 
+/** Auth lookup: id + password hash for login/register checks. */
+export async function getAuthByEmail(
+  email: string,
+): Promise<{ id: string; email: string; password_hash: string | null } | null> {
+  const rows = await sql<{ id: string; email: string; password_hash: string | null }[]>`
+    select id, email, password_hash from users where email = ${email}`;
+  return rows[0] ?? null;
+}
+
+/** Create a user with a password hash (register). Email must be free. */
+export async function createUserWithPassword(
+  email: string,
+  passwordHash: string,
+  displayName: string | null,
+): Promise<{ id: string; email: string }> {
+  const rows = await sql<{ id: string; email: string }[]>`
+    insert into users (email, password_hash, display_name)
+    values (${email}, ${passwordHash}, ${displayName})
+    returning id, email`;
+  return rows[0];
+}
+
 export interface UpdateUserPatch {
   displayName?: string;
   bio?: string;
