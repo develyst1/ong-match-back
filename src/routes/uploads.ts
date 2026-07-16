@@ -6,7 +6,6 @@ import { randomUUID } from "node:crypto";
 import { userMiddleware } from "../middleware/user";
 
 export const UPLOAD_DIR = join(process.cwd(), "uploads");
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? `http://localhost:${process.env.PORT ?? 3010}`;
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB after client-side downscale
 
 /**
@@ -31,7 +30,8 @@ export function uploadsRoutes() {
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(join(UPLOAD_DIR, name), buf);
 
-    return c.json({ success: true, data: { url: `${PUBLIC_BASE_URL}/uploads/${name}` } });
+    // Relative, same-origin URL — works behind any domain/proxy without config.
+    return c.json({ success: true, data: { url: `/uploads/${name}` } });
   });
 
   return r;
