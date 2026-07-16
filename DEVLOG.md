@@ -38,15 +38,24 @@ users/me (GET/PUT), users/:id, users/:id/can-contact · chat: conversations (+me
 rooms (+/:tag/messages) · uploads. Auth: (being added — see below).
 
 ## Auth (real, as of 2026-07-16)
-Email + password (Bun.password/argon2) → JWT. `POST /api/v1/auth/register` &
-`/login` (public). Protected routes require `Authorization: Bearer <jwt>`; the
-middleware derives userId from the verified token. The old `x-user-email` header
-is trusted ONLY under `bun test` (NODE_ENV=test) for test convenience — inert in
-prod. Set **`JWT_SECRET`** in the backend server env (dev fallback is insecure).
-Frontend: login/register call the backend; JWT stored in localStorage
-`ong-match-token`; interceptor sends it as Bearer and redirects to /login on 401.
-NextAuth is no longer used for login (files remain but dormant). Existing
-`demo-token` sessions and passwordless junk users can no longer authenticate.
+Email + password (Bun.password/argon2) → JWT. `src/auth/token.ts` `signToken(userId)`
+/`verifyToken→userId` (HS256, 30d). **`JWT_SECRET` env is REQUIRED — token.ts throws
+at import if missing** (so it must be set for dev, tests, and prod). `POST
+/api/v1/auth/register` takes `{email,password(min8),displayName?,phone?,age?}` in one
+call and is the ONLY way an account is created (returns 201 + token + user; 409 on
+duplicate email/phone). `/auth/login` returns a generic 401 (no email-existence leak).
+`userMiddleware` requires `Authorization: Bearer <jwt>`, verifies it, and confirms the
+user still exists (getUserById) — there is NO `x-user-email` fallback anymore; route
+tests sign a token via a helper. App-level `onError` maps ZodError→400.
+Frontend: `services/auth.service.ts` `login/register` → `AuthResponse`, `authErrorMessage`,
+`clearSession`; JWT in localStorage `ong-match-token`; interceptor sends Bearer and clears
+the session + redirects to /login on 401. Types in `types/api/main/auth.ts`.
+NextAuth no longer used for login. Existing `demo-token` sessions and passwordless junk
+users can no longer authenticate.
+
+> Note: this replaced an earlier simpler auth impl of mine during a merge with
+> `origin/dong` (another agent's version was more complete — kept it). My non-auth
+> work (the /api double-prefix fix, relative uploads, Next rewrites) was preserved.
 
 ## Known issues / gaps
 - `/api/v1/tribes` and `/interests` 404 (never implemented; frontend falls back to mock).
@@ -54,14 +63,13 @@ NextAuth is no longer used for login (files remain but dormant). Existing
 - Test junk historically written to prod DB as `%@x.co` (now isolated to test DB).
 
 ## Log (newest first)
-- **2026-07-16 — Real authentication (DONE)**: fixed the "any email/password logs in +
-  creates junk users" hole. Password (Bun.password argon2) + JWT (hono/jwt HS256);
-  `users.password_hash` column; JWT Bearer middleware replaced the spoofable
-  `x-user-email` (kept only under NODE_ENV=test). Global `onError` maps ZodError→400.
-  Frontend: real login/register, token in localStorage, interceptor sends Bearer.
-  Verified: garbage login 400/401, spoofed x-user-email→401, demo-token→401, real
-  token→200. TODO on server: set `JWT_SECRET` env + rebuild/restart both, optionally
-  purge passwordless junk users. 29 backend tests pass.
+- **2026-07-16 — Real authentication (DONE, merged)**: fixed the "any email/password
+  logs in + creates junk users" hole. Resolved a merge with `origin/dong` that also
+  added auth — kept the remote's more complete version (see Auth section) + my non-auth
+  fixes. Verified: garbage login 400/401, spoofed x-user-email→401, demo-token→401,
+  real register/login→token→app works. 34 backend tests pass, both repos tsc clean.
+  **TODO on server: set `JWT_SECRET` (long random) in backend .env, rebuild+restart both
+  via pm2.** Junk passwordless users purged from prod (kept @ong.demo + real accounts).
 - 2026-07-16 — Fixed deploy `/api/api/v1` double-prefix (baseURL was `/api`), uploads
   return relative URLs, Next rewrites for dev, nginx ong.conf (/api/auth + /uploads).
 - Earlier — see git log: types v2, feed, chat 1:1 + group, trending, upload, responsive.

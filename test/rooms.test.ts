@@ -1,10 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import { migrate } from "../src/db/migrate";
 import { createApp } from "../src/app";
-import { upsertUserByEmail } from "../src/repo/users";
+import { makeUser } from "./helpers";
 import { createType } from "../src/repo/types";
-
-const json = { "Content-Type": "application/json" };
 const data = async (r: Response): Promise<any> => (await r.json() as { data: unknown }).data;
 
 describe("group rooms", () => {
@@ -12,9 +10,9 @@ describe("group rooms", () => {
     await migrate();
     const stamp = Date.now();
     const tag = `ดนตรีRM${stamp}`;
-    const a = await upsertUserByEmail(`rmA${stamp}@x.co`);
-    const b = await upsertUserByEmail(`rmB${stamp}@x.co`);
-    const c = await upsertUserByEmail(`rmC${stamp}@x.co`);
+    const a = await makeUser(`rmA${stamp}@x.co`);
+    const b = await makeUser(`rmB${stamp}@x.co`);
+    const c = await makeUser(`rmC${stamp}@x.co`);
     await sqlName(a.id, "เอ");
     await sqlName(b.id, "บี");
 
@@ -24,9 +22,9 @@ describe("group rooms", () => {
     await createType(c.id, `กาแฟ${stamp}`, "", [`กาแฟ${stamp}`]);
 
     const app = createApp();
-    const hA = { ...json, "x-user-email": `rmA${stamp}@x.co` };
-    const hB = { ...json, "x-user-email": `rmB${stamp}@x.co` };
-    const hC = { ...json, "x-user-email": `rmC${stamp}@x.co` };
+    const hA = a.headers;
+    const hB = b.headers;
+    const hC = c.headers;
     const path = `/api/v1/rooms/${encodeURIComponent(tag)}/messages`;
 
     // Non-member C is blocked from reading and posting.

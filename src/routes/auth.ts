@@ -1,50 +1,71 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { signToken } from "../auth/jwt";
-import { getAuthByEmail, createUserWithPassword, PG_UNIQUE_VIOLATION } from "../repo/users";
+import { createUser, getUserByEmail, PG_UNIQUE_VIOLATION, type UserRow } from "../repo/users";
+import { signToken } from "../auth/token";
 
-/** Real email+password auth (Bun.password hashing + JWT). Public — no middleware. */
+/** Public account shape returned alongside a token (never includes the hash). */
+function toAuthUser(u: UserRow) {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.display_name ?? u.email.split("@")[0],
+    avatarUrl: u.avatar_url ?? "",
+  };
+}
+
+/**
+ * Public auth endpoints. These are the ONLY way an account comes into
+ * existence — every other route requires a verified token.
+ */
 export function authRoutes() {
   const r = new Hono();
 
   r.post("/auth/register", async (c) => {
-    const { email, password, displayName } = z
+    const body = z
       .object({
         email: z.string().email(),
-        password: z.string().min(6, "รหัสผ่านอย่างน้อย 6 ตัว"),
-        displayName: z.string().optional(),
+        password: z.string().min(8, "รหัสผ่านต้องยาวอย่างน้อย 8 ตัว"),
+        displayName: z.string().min(1).optional(),
+        phone: z.string().regex(/^0\d{8,9}$/, "เบอร์โทรไม่ถูกต้อง").optional(),
+        age: z.number().int().min(1).max(120).optional(),
       })
       .parse(await c.req.json());
 
-    if (await getAuthByEmail(email)) {
-      return c.json({ success: false, error: "อีเมลนี้ถูกใช้แล้ว" }, 409);
-    }
-    const hash = await Bun.password.hash(password);
+    const passwordHash = await Bun.password.hash(body.password);
     try {
-      const u = await createUserWithPassword(email, hash, displayName ?? null);
-      const token = await signToken(u.id, u.email);
-      return c.json({ success: true, data: { token, user: { id: u.id, email: u.email } } });
+      const user = await createUser({ ...body, passwordHash });
+      return c.json({ success: true, data: { token: await signToken(user.id), user: toAuthUser(user) } }, 201);
     } catch (e) {
-      // Race on the unique email index.
       if ((e as { code?: string })?.code === PG_UNIQUE_VIOLATION) {
-        return c.json({ success: false, error: "อีเมลนี้ถูกใช้แล้ว" }, 409);
+        const msg = String((e as { detail?: string })?.detail ?? "").includes("phone")
+          ? "เบอร์นี้ถูกใช้สมัครแล้ว"
+          : "อีเมลนี้ถูกใช้สมัครแล้ว";
+        return c.json({ success: false, error: msg }, 409);
       }
       throw e;
     }
   });
 
   r.post("/auth/login", async (c) => {
-    const { email, password } = z
-      .object({ email: z.string().email(), password: z.string() })
+    const body = z
+      .object({ email: z.string().min(1), password: z.string().min(1) })
       .parse(await c.req.json());
 
-    const u = await getAuthByEmail(email);
-    const ok = !!u?.password_hash && (await Bun.password.verify(password, u.password_hash));
-    if (!u || !ok) {
-      return c.json({ success: false, error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" }, 401);
+    const user = await getUserByEmail(body.email);
+    // Same generic message whether the account is missing, has no password, or
+    // the password is wrong — don't leak which emails are registered.
+    const invalid = () => c.json({ success: false, error: "อีเมลหรือรหัสผ่านไม่ถูกต้อง" }, 401);
+    if (!user?.password_hash) return invalid();
+
+    let ok = false;
+    try {
+      ok = await Bun.password.verify(body.password, user.password_hash);
+    } catch {
+      ok = false; // malformed/legacy hash — treat as a failed login
     }
-    const token = await signToken(u.id, u.email);
-    return c.json({ success: true, data: { token, user: { id: u.id, email: u.email } } });
+    if (!ok) return invalid();
+
+    return c.json({ success: true, data: { token: await signToken(user.id), user: toAuthUser(user) } });
   });
 
   return r;

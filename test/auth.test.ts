@@ -1,58 +1,103 @@
 import { describe, it, expect } from "bun:test";
 import { migrate } from "../src/db/migrate";
 import { createApp } from "../src/app";
+import { getUserByEmail } from "../src/repo/users";
 
 const json = { "Content-Type": "application/json" };
-const body = async (r: Response): Promise<any> => (await r.json()) as any;
+const body = (r: Response) => r.json() as Promise<any>;
 
 describe("auth", () => {
-  it("register issues a JWT that authorizes protected routes", async () => {
+  it("registers an account, then logs in only with the correct password", async () => {
     await migrate();
     const app = createApp();
-    const email = `auth${Date.now()}@real.co`;
+    const email = `auth${Date.now()}@x.co`;
+    const password = "correct-horse";
 
     const reg = await app.request("/api/v1/auth/register", {
       method: "POST",
       headers: json,
-      body: JSON.stringify({ email, password: "secret123", displayName: "เทสต์" }),
+      body: JSON.stringify({ email, password, displayName: "เทส" }),
     });
-    expect(reg.status).toBe(200);
-    const token = (await body(reg)).data.token as string;
-    expect(token.split(".").length).toBe(3); // looks like a JWT
+    expect(reg.status).toBe(201);
+    expect((await body(reg)).data.token).toBeTruthy();
 
-    // The token authorizes a protected route (no x-user-email needed).
-    const me = await app.request("/api/v1/types/me", {
-      headers: { Authorization: `Bearer ${token}` },
+    // The password is stored hashed, never in the clear.
+    const stored = await getUserByEmail(email);
+    expect(stored?.password_hash).toBeTruthy();
+    expect(stored?.password_hash).not.toBe(password);
+
+    const ok = await app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email, password }),
     });
-    expect(me.status).toBe(200);
+    expect(ok.status).toBe(200);
+    expect((await body(ok)).data.token).toBeTruthy();
+
+    // The bug this fixes: a wrong password used to log in fine.
+    const wrong = await app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email, password: "totally-wrong" }),
+    });
+    expect(wrong.status).toBe(401);
   });
 
-  it("rejects duplicate email, wrong password, and unknown user", async () => {
+  it("rejects login for an email that was never registered — and creates nothing", async () => {
     await migrate();
     const app = createApp();
-    const email = `dup${Date.now()}@real.co`;
-    const reg = (p: string) =>
-      app.request("/api/v1/auth/register", { method: "POST", headers: json, body: JSON.stringify({ email, password: p }) });
+    const email = `ghost${Date.now()}@x.co`;
 
-    expect((await reg("secret123")).status).toBe(200);
-    expect((await reg("secret123")).status).toBe(409); // duplicate email
-
-    const login = (p: string) =>
-      app.request("/api/v1/auth/login", { method: "POST", headers: json, body: JSON.stringify({ email, password: p }) });
-    expect((await login("secret123")).status).toBe(200); // correct
-    expect((await login("wrongpass")).status).toBe(401); // wrong password
-
-    const unknown = await app.request("/api/v1/auth/login", {
-      method: "POST", headers: json, body: JSON.stringify({ email: `nope${Date.now()}@real.co`, password: "x" }),
+    const res = await app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email, password: "anything" }),
     });
-    expect(unknown.status).toBe(401);
+    expect(res.status).toBe(401);
+    // No implicit account was conjured up for the unknown email.
+    expect(await getUserByEmail(email)).toBeNull();
   });
 
-  it("blocks protected routes without a valid token", async () => {
+  it("refuses a duplicate email registration", async () => {
+    await migrate();
     const app = createApp();
-    const noAuth = await app.request("/api/v1/types/me");
-    expect(noAuth.status).toBe(401);
-    const badToken = await app.request("/api/v1/types/me", { headers: { Authorization: "Bearer garbage" } });
-    expect(badToken.status).toBe(401);
+    const email = `dupreg${Date.now()}@x.co`;
+    const payload = JSON.stringify({ email, password: "password123" });
+
+    expect((await app.request("/api/v1/auth/register", { method: "POST", headers: json, body: payload })).status).toBe(201);
+    const again = await app.request("/api/v1/auth/register", { method: "POST", headers: json, body: payload });
+    expect(again.status).toBe(409);
+  });
+
+  it("blocks protected routes without a valid token, and cannot be spoofed by header", async () => {
+    await migrate();
+    const app = createApp();
+
+    // No token at all.
+    expect((await app.request("/api/v1/types/me")).status).toBe(401);
+
+    // A forged/garbage bearer token.
+    expect(
+      (await app.request("/api/v1/types/me", { headers: { Authorization: "Bearer not-a-real-token" } })).status,
+    ).toBe(401);
+
+    // The old impersonation hole: picking an identity via header no longer works.
+    expect(
+      (await app.request("/api/v1/types/me", { headers: { "x-user-email": "victim@x.co" } })).status,
+    ).toBe(401);
+  });
+
+  it("accepts the token issued at registration on protected routes", async () => {
+    await migrate();
+    const app = createApp();
+    const reg = await app.request("/api/v1/auth/register", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ email: `tok${Date.now()}@x.co`, password: "password123" }),
+    });
+    const token = (await body(reg)).data.token as string;
+
+    const me = await app.request("/api/v1/users/me", { headers: { Authorization: `Bearer ${token}` } });
+    expect(me.status).toBe(200);
   });
 });

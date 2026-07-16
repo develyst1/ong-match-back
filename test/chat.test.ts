@@ -1,10 +1,8 @@
 import { describe, it, expect } from "bun:test";
 import { migrate } from "../src/db/migrate";
 import { createApp } from "../src/app";
-import { upsertUserByEmail } from "../src/repo/users";
+import { makeUser } from "./helpers";
 import { createType, setLevel, setMinContactLevel } from "../src/repo/types";
-
-const json = { "Content-Type": "application/json" };
 
 /** Read the `data` payload from a Hono test Response (typed loosely for tests). */
 const data = async (r: Response): Promise<any> => (await r.json() as { data: unknown }).data;
@@ -13,8 +11,8 @@ describe("chat", () => {
   it("gates conversation creation then allows chatting once eligible", async () => {
     await migrate();
     const stamp = Date.now();
-    const a = await upsertUserByEmail(`chatA${stamp}@x.co`);
-    const b = await upsertUserByEmail(`chatB${stamp}@x.co`);
+    const a = await makeUser(`chatA${stamp}@x.co`);
+    const b = await makeUser(`chatB${stamp}@x.co`);
 
     // Both share the tag "กีตาร์"; A is level 50 in the shared type.
     const ta = await createType(a.id, `กีตาร์A${stamp}`, "", ["กีตาร์"]);
@@ -22,8 +20,8 @@ describe("chat", () => {
     const tb = await createType(b.id, `กีตาร์B${stamp}`, "", ["กีตาร์"]);
 
     const app = createApp();
-    const hA = { ...json, "x-user-email": `chatA${stamp}@x.co` };
-    const hB = { ...json, "x-user-email": `chatB${stamp}@x.co` };
+    const hA = a.headers;
+    const hB = b.headers;
 
     // B requires level 90 → A (50) is blocked.
     await setMinContactLevel(tb.id, b.id, 90);
@@ -61,9 +59,8 @@ describe("chat", () => {
     expect((await data(aView))[0].isMine).toBe(true);
 
     // A non-member is forbidden.
-    const cUser = await upsertUserByEmail(`chatC${stamp}@x.co`);
-    void cUser;
-    const hC = { ...json, "x-user-email": `chatC${stamp}@x.co` };
+    const cUser = await makeUser(`chatC${stamp}@x.co`);
+    const hC = cUser.headers;
     const forbidden = await app.request(`/api/v1/conversations/${convId}/messages`, { headers: hC });
     expect(forbidden.status).toBe(403);
 

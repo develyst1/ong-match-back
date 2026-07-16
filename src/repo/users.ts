@@ -10,43 +10,39 @@ export interface UserRow {
   avatar_url: string | null;
   cover_url: string | null;
   phone: string | null;
+  password_hash: string | null;
   activity_level: string | null;
   created_at: string;
 }
 
-export async function upsertUserByEmail(email: string): Promise<{ id: string; email: string }> {
-  const rows = await sql<{ id: string; email: string }[]>`
-    insert into users (email) values (${email})
-    on conflict (email) do update set email = excluded.email
-    returning id, email`;
+export interface NewUser {
+  email: string;
+  passwordHash: string;
+  displayName?: string;
+  phone?: string;
+  age?: number;
+}
+
+/**
+ * Create a real account. Throws a postgres unique-violation (23505) when the
+ * email or phone is already taken — accounts are never created implicitly.
+ */
+export async function createUser(u: NewUser): Promise<UserRow> {
+  const rows = await sql<UserRow[]>`
+    insert into users (email, password_hash, display_name, phone, age)
+    values (${u.email}, ${u.passwordHash}, ${u.displayName ?? null}, ${u.phone ?? null}, ${u.age ?? null})
+    returning *`;
   return rows[0];
+}
+
+export async function getUserByEmail(email: string): Promise<UserRow | null> {
+  const rows = await sql<UserRow[]>`select * from users where lower(email) = lower(${email})`;
+  return rows[0] ?? null;
 }
 
 export async function getUserById(userId: string): Promise<UserRow | null> {
   const rows = await sql<UserRow[]>`select * from users where id = ${userId}`;
   return rows[0] ?? null;
-}
-
-/** Auth lookup: id + password hash for login/register checks. */
-export async function getAuthByEmail(
-  email: string,
-): Promise<{ id: string; email: string; password_hash: string | null } | null> {
-  const rows = await sql<{ id: string; email: string; password_hash: string | null }[]>`
-    select id, email, password_hash from users where email = ${email}`;
-  return rows[0] ?? null;
-}
-
-/** Create a user with a password hash (register). Email must be free. */
-export async function createUserWithPassword(
-  email: string,
-  passwordHash: string,
-  displayName: string | null,
-): Promise<{ id: string; email: string }> {
-  const rows = await sql<{ id: string; email: string }[]>`
-    insert into users (email, password_hash, display_name)
-    values (${email}, ${passwordHash}, ${displayName})
-    returning id, email`;
-  return rows[0];
 }
 
 export interface UpdateUserPatch {

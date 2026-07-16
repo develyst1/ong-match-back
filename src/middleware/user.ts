@@ -1,32 +1,30 @@
 import type { Context, Next } from "hono";
-import { verifyToken } from "../auth/jwt";
-import { upsertUserByEmail } from "../repo/users";
+import { verifyToken } from "../auth/token";
+import { getUserById } from "../repo/users";
 
 /**
- * Authenticates via a JWT `Authorization: Bearer <token>` and stashes the
- * verified userId on the context. The old spoofable `x-user-email` header is NO
- * LONGER trusted in production — it only works under `bun test` (NODE_ENV=test)
- * as a convenience, and that gate can't be flipped by a request.
+ * Authenticates the caller from `Authorization: Bearer <jwt>` and stashes the
+ * user id on the context.
+ *
+ * The token is signed by the server at login, so the caller cannot pick who
+ * they are (the old `x-user-email` header let anyone impersonate anyone and
+ * silently created an account for any address). Accounts are never created
+ * here — only `/auth/register` does that.
  */
 export async function userMiddleware(c: Context, next: Next) {
-  const auth = c.req.header("Authorization");
-  const token = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
-  const payload = token ? await verifyToken(token) : null;
-  if (payload?.sub) {
-    c.set("userId", payload.sub);
-    return next();
-  }
+  const unauthorized = () => c.json({ success: false, error: "unauthorized" }, 401);
 
-  // Test-only fallback: signing a JWT per request would bloat every test. This
-  // branch is dead in production (NODE_ENV is never "test" there).
-  if (process.env.NODE_ENV === "test") {
-    const email = c.req.header("x-user-email");
-    if (email) {
-      const u = await upsertUserByEmail(email);
-      c.set("userId", u.id);
-      return next();
-    }
-  }
+  const header = c.req.header("Authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  if (!token) return unauthorized();
 
-  return c.json({ success: false, error: "unauthorized" }, 401);
+  const userId = await verifyToken(token);
+  if (!userId) return unauthorized();
+
+  // The account must still exist (e.g. deleted since the token was issued).
+  const user = await getUserById(userId);
+  if (!user) return unauthorized();
+
+  c.set("userId", user.id);
+  await next();
 }

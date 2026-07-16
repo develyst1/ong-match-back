@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { migrate } from "../src/db/migrate";
-import { upsertUserByEmail } from "../src/repo/users";
+import { makeUser } from "./helpers";
 import { createType } from "../src/repo/types";
 import { trendingTags } from "../src/repo/people";
 
@@ -9,8 +9,8 @@ describe("trendingTags", () => {
     await migrate();
     const stamp = Date.now();
     const tag = `กีตาร์TST${stamp}`;
-    const a = await upsertUserByEmail(`trA${stamp}@x.co`);
-    const b = await upsertUserByEmail(`trB${stamp}@x.co`);
+    const a = await makeUser(`trA${stamp}@x.co`);
+    const b = await makeUser(`trB${stamp}@x.co`);
 
     // Two different people, both tagged with the shared tag → people = 2.
     await createType(a.id, `กีตาร์ไฟฟ้า${stamp}`, "", [tag, `ดนตรีTST${stamp}`]);
